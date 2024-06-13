@@ -1,0 +1,100 @@
+﻿@page "/emailticketedit/{TicketGuid}"
+@using Microsoft.Extensions.Configuration
+@using System.Security.Claims
+@using HelpDesk.Data
+@inject EmailSender _EmailSender
+@inject IConfiguration _configuration
+@inject IHttpContextAccessor httpContextAccessor
+@inherits OwningComponentBase<HelpDeskService>
+<div id="target" style="height: 500px;">
+    @if (!EditDialogVisibility)
+    {
+        <h2>Your response has been saved</h2>
+        <h4>Thank You!</h4>
+    }
+</div>
+<SfDialog Target="#target" Width="500px" Height="500px"
+          IsModal="true" ShowCloseIcon="true"
+          Visible="EditDialogVisibility">
+    <DialogTemplates>
+        <Header> EDIT TICKET # @SelectedTicket.Id</Header>
+        <Content>
+            <EditTicket SelectedTicket="@SelectedTicket" />
+        </Content>
+        <FooterTemplate>
+            <div class="button-container">
+                <button type="submit"
+                        class="e-btn e-normal e-primary"
+                        @onclick="SaveTicket">
+                    Save
+                </button>
+            </div>
+        </FooterTemplate>
+    </DialogTemplates>
+</SfDialog>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+    [Parameter] public string TicketGuid { get; set; }
+    ClaimsPrincipal CurrentUser = new ClaimsPrincipal();
+    private HelpDeskTickets SelectedTicket = new HelpDeskTickets();
+    private bool EditDialogVisibility = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get current user.
+        CurrentUser = (await authenticationStateTask).User;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Get the help desk ticket associated with the GUID that was passed to the control.
+            SelectedTicket = await Service.GetHelpDeskTicketAsync(TicketGuid);
+            if (SelectedTicket == null)
+            {
+                // Handle the case when the ticket is not found
+                EditDialogVisibility = false;
+                StateHasChanged();
+                return;
+            }
+            EditDialogVisibility = true;
+            StateHasChanged();
+        }
+    }
+
+    public async Task SaveTicket()
+    {
+        // Save the help desk ticket.
+        var result = await Service.UpdateTicketAsync(SelectedTicket);
+        // Close the Dialog.
+        EditDialogVisibility = false;
+
+        // Send Telegram notifications.
+        string message = $"Help Desk Ticket Updated:\nTicket ID: {SelectedTicket.Id}\nDescription: {SelectedTicket.TicketDescription}\nStatus: {SelectedTicket.TicketStatus}\nRequester: {SelectedTicket.TicketRequesterEmail}\nURL: {GetHelpDeskTicketUrl(SelectedTicket.TicketGuid)}";
+
+        if (CurrentUser.Identity.IsAuthenticated)
+        {
+            if (CurrentUser.IsInRole("Administrators"))
+            {
+                // User is an administrator, notify the requester.
+                await _EmailSender.SendEmail("Help Desk Ticket Updated", SelectedTicket.TicketRequesterEmail, SelectedTicket.TicketGuid);
+                return;
+            }
+        }
+
+        // Notify the administrator.
+        string administratorEmail = _configuration["SenderEmail"];
+        await _EmailSender.SendEmail("Help Desk Ticket Updated", administratorEmail, SelectedTicket.TicketGuid);
+    }
+
+    public string GetHelpDeskTicketUrl(string TicketGuid)
+    {
+        var request = httpContextAccessor.HttpContext.Request;
+        var host = request.Host.ToUriComponent();
+        var pathBase = request.PathBase.ToUriComponent();
+        return $@"{request.Scheme}://{host}{pathBase}/emailticketedit/{TicketGuid}";
+    }
+}

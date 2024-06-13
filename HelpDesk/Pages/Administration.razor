@@ -1,0 +1,157 @@
+﻿@page "/administration"
+@using HelpDesk.Data
+@inject EmailSender _EmailSender
+@inject NavigationManager NavigationManager
+@inherits OwningComponentBase<HelpDeskService>
+
+<AuthorizeView Roles="Administrators">
+    <div>
+        <div id="target" style="height: 500px;">
+            <SfGrid ID="Grid"
+                    @ref="gridObj"
+                    DataSource="@colHelpDeskTickets"
+                    AllowPaging="true"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowReordering="true">
+                <GridPageSettings PageSize="5"></GridPageSettings>
+                <GridEvents CommandClicked="OnCommandClicked"
+                            TValue="HelpDeskTickets">
+                </GridEvents>
+                <GridColumns>
+                    <GridColumn HeaderText="" TextAlign="TextAlign.Left" Width="150">
+                        <GridCommandColumns>
+                            <GridCommandColumn Type=CommandButtonType.Edit
+                                               ButtonOption="@(new CommandButtonOptions()
+                                                               { Content = "Edit" })">
+                            </GridCommandColumn>
+                            <GridCommandColumn Type=CommandButtonType.Delete
+                                               ButtonOption="@(new CommandButtonOptions()
+                                                               { Content = "Delete" })">
+                            </GridCommandColumn>
+                        </GridCommandColumns>
+                    </GridColumn>
+                    <GridColumn IsPrimaryKey="true" Field=@nameof(HelpDeskTickets.Id)
+                                HeaderText="ID #" TextAlign="@TextAlign.Left" Width="70">
+                    </GridColumn>
+                    <GridColumn Field=@nameof(HelpDeskTickets.TicketStatus)
+                                HeaderText="Status" TextAlign="@TextAlign.Left" Width="80">
+                    </GridColumn>
+                    <GridColumn Field=@nameof(HelpDeskTickets.TicketDate)
+                                HeaderText="Date" TextAlign="@TextAlign.Left" Width="80">
+                    </GridColumn>
+                    <GridColumn Field=@nameof(HelpDeskTickets.TicketDescription)
+                                HeaderText="Description" TextAlign="@TextAlign.Left" Width="150">
+                    </GridColumn>
+                    <GridColumn Field=@nameof(HelpDeskTickets.TicketRequesterEmail)
+                                HeaderText="Requester" TextAlign="@TextAlign.Left" Width="150">
+                    </GridColumn>
+                </GridColumns>
+            </SfGrid>
+        </div>
+    </div>
+    <SfDialog Target="#target"
+              Width="100px"
+              Height="130px"
+              IsModal="true"
+              ShowCloseIcon="false"
+              @bind-Visible="DeleteRecordConfirmVisibility">
+        <DialogTemplates>
+            <Header> DELETE RECORD ? </Header>
+            <Content>
+                <div class="button-container">
+                    <button type="submit"
+                            class="e-btn e-normal e-primary"
+                            @onclick="ConfirmDeleteYes">
+                        Yes
+                    </button>
+                    <button type="submit"
+                            class="e-btn e-normal"
+                            @onclick="ConfirmDeleteNo">
+                        No
+                    </button>
+                </div>
+            </Content>
+        </DialogTemplates>
+    </SfDialog>
+    <SfDialog Target="#target"
+              Width="500px"
+              Height="500px"
+              IsModal="true"
+              ShowCloseIcon="true"
+              @bind-Visible="EditDialogVisibility">
+        <DialogTemplates>
+            <Header> EDIT TICKET # @SelectedTicket.Id</Header>
+            <Content>
+                <EditTicket SelectedTicket="@SelectedTicket" />
+            </Content>
+            <FooterTemplate>
+                <div class="button-container">
+                    <button type="submit"
+                            class="e-btn e-normal e-primary"
+                            @onclick="SaveTicket">
+                        Save
+                    </button>
+                </div>
+            </FooterTemplate>
+        </DialogTemplates>
+    </SfDialog>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    SfGrid<HelpDeskTickets> gridObj;
+    public List<HelpDeskTickets> colHelpDeskTickets { get; set; } = new List<HelpDeskTickets>();
+    private HelpDeskTickets SelectedTicket = new HelpDeskTickets();
+    public bool EditDialogVisibility { get; set; } = false;
+    public bool DeleteRecordConfirmVisibility { get; set; } = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        colHelpDeskTickets = Service.GetHelpDeskTickets().ToList();
+        StateHasChanged();
+    }
+
+    public async Task OnCommandClicked(CommandClickEventArgs<HelpDeskTickets> args)
+    {
+        SelectedTicket = await Service.GetHelpDeskTicketAsync(args.RowData.TicketGuid);
+
+        if (args.CommandColumn.ButtonOption.Content == "Edit")
+        {
+            EditDialogVisibility = true;
+            StateHasChanged();
+        }
+
+        if (args.CommandColumn.ButtonOption.Content == "Delete")
+        {
+            DeleteRecordConfirmVisibility = true;
+            StateHasChanged();
+        }
+    }
+
+    public async Task SaveTicket()
+    {
+        await Service.UpdateTicketAsync(SelectedTicket);
+        EditDialogVisibility = false;
+        await LoadDataAsync();
+    }
+
+    public async Task ConfirmDeleteYes()
+    {
+        await Service.DeleteHelpDeskTicketsAsync(SelectedTicket);
+        DeleteRecordConfirmVisibility = false;
+        await LoadDataAsync();
+    }
+
+    public void ConfirmDeleteNo()
+    {
+        DeleteRecordConfirmVisibility = false;
+    }
+}
